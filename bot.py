@@ -1,12 +1,13 @@
-
 import asyncio
 import os
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from groq import Groq
 from supabase import create_client
 import httpx
 from datetime import datetime
 
-# إعدادات من Environment Variables
+# إعدادات
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -17,6 +18,18 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 STOP_LOSS_PCT = 0.05
 TAKE_PROFIT_PCT = 0.10
 
+# HTTP Server للحفاظ على Render
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Zad Capital Bot Running!")
+
+def start_server():
+    port = int(os.getenv("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    server.serve_forever()
+
 async def get_price(symbol):
     try:
         async with httpx.AsyncClient() as client:
@@ -26,18 +39,6 @@ async def get_price(symbol):
             return float(data["chart"]["result"][0]["meta"]["regularMarketPrice"])
     except:
         return None
-
-def analyze_news(symbol, news_text):
-    response = groq_client.chat.completions.create(
-        model="llama3-8b-8192",
-        messages=[
-            {"role": "system", "content": "أنت محلل مالي إسلامي. حدد: BUY أو WAIT مع CONFIDENCE (0-100) و REASON."},
-            {"role": "user", "content": f"السهم: {symbol}\nالخبر: {news_text}"}
-        ],
-        temperature=0.3,
-        max_tokens=150
-    )
-    return response.choices[0].message.content
 
 async def monitor_trades():
     result = supabase.table("trades").select("*").eq("status", "open").execute()
@@ -73,4 +74,5 @@ async def run_bot():
         await asyncio.sleep(1800)
 
 if __name__ == "__main__":
+    Thread(target=start_server, daemon=True).start()
     asyncio.run(run_bot())
